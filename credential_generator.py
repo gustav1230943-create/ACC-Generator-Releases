@@ -18,10 +18,12 @@ from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
 import tkinter.font as tkfont
 
-CURRENT_VERSION = "1.0.7"
+CURRENT_VERSION = "1.0.8"
 GITHUB_REPO = "gustav1230943-create/ACC-Generator-Releases"
 RELEASE_ASSET = "Acc.Generator.exe"
 APP_NAME = "ACC Generator"
+# Keysystem an/aus. False = App startet ohne Lizenzschlüssel (kein Lizenzserver, keine Sperre).
+LICENSE_REQUIRED = False
 
 try:
     from PIL import Image, ImageEnhance, ImageTk
@@ -2632,6 +2634,10 @@ class App(MultitoolMixin, ToolsMixin, tk.Tk):
                 except tk.TclError:
                     pass
         self.exit_mini_mode()
+        try:
+            self.update_idletasks()        # offene Zeichen-Aufträge abarbeiten, sonst Tcl-Warnungen
+        except tk.TclError:
+            pass
         self.destroy()
 
     def select_tab(self, index):
@@ -5103,25 +5109,24 @@ def run_app(on_app_created=None):
         except OSError:
             pass
 
+    # Update-Check zuerst – so kommen Updates auch an, wenn die Lizenz nicht passt.
+    check_for_updates()
+
     logout_message = ""
     license_info = None
     restart = None
-    first_start = True
     while True:
-        if restart is None:
+        if restart is None and LICENSE_REQUIRED:
             license_info = _require_local_license(logout_message)
             if not license_info:
                 break
-            if first_start:
-                check_for_updates()
-                first_start = False
         app = App()
         if restart:
             app.geometry(restart["geometry"])
             app.select_tab(restart["tab"])
             app.set_status(f"Design: {THEMES[CURRENT_THEME]['label']}")
         app.logout_message = ""
-        app.license_guard = LicenseGuard(app, *license_info)
+        app.license_guard = LicenseGuard(app, *license_info) if LICENSE_REQUIRED else None
         if on_app_created:
             on_app_created(app)
         app.mainloop()
@@ -5132,7 +5137,8 @@ def run_app(on_app_created=None):
             continue
         if getattr(app, "restart_requested", False):          # Designwechsel
             guard = app.license_guard
-            license_info = (guard.key, guard.data)
+            if guard is not None:
+                license_info = (guard.key, guard.data)
             restart = {"geometry": getattr(app, "restart_geometry", ""), "tab": getattr(app, "restart_tab", 2)}
             apply_theme(_settings_on_disk().get("theme", "original"))
             continue
