@@ -1,0 +1,48 @@
+name: Build & Release EXE
+
+# Startet, sobald ein Versions-Tag wie v1.0.7 gepusht wird.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip pyinstaller pillow tzdata
+
+      - name: Check version matches tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $line = Select-String -Path credential_generator.py -Pattern '^CURRENT_VERSION = "(.+)"' | Select-Object -First 1
+          $ver = $line.Matches[0].Groups[1].Value
+          if ($ver -ne $tag) { Write-Error "CURRENT_VERSION ($ver) passt nicht zum Tag ($tag)"; exit 1 }
+
+      - name: Build EXE
+        run: >
+          pyinstaller --onefile --noconsole --clean
+          --name "Acc.Generator"
+          --hidden-import license_server
+          --collect-data tzdata
+          credential_generator.py
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create "${{ github.ref_name }}" "dist/Acc.Generator.exe" `
+            --title "ACC Generator ${{ github.ref_name }}" `
+            --notes-file "release-notes/${{ github.ref_name }}.md"
